@@ -1,114 +1,152 @@
 # 🚀 Stratus Self-Service Streaming Platform (Azure)
 
+![Architecture](architecture/architecture-diagram.png)
+
+---
+
 ## 📌 Overview
 
-Implemented a **config-driven, self-service real-time streaming ingestion platform** on Azure using **Event Hubs (Kafka API), Databricks, and Delta Lake**.
+**Stratus** is a **config-driven, self-service real-time streaming platform** designed to onboard CDC-based data pipelines at scale with **zero code changes**.
 
-The platform enables onboarding of new CDC-based pipelines **without code changes**, supporting **replay-safe, idempotent, and scalable processing** across multiple entities.
+Built on **Azure Event Hubs (Kafka API), Databricks, and Delta Lake**, the platform processes high-volume event streams using a **multi-layer lakehouse architecture (Bronze / Silver / Gold)**.
 
-Designed using production-grade patterns including **Bronze/Silver/Gold layering, schema validation, deduplication, and CDC merge logic**.
+### 🎯 Objectives
 
----
-
-## 🏗️ Architecture
-
-
-Producer (CDC Events)
-↓
-Azure Event Hubs (Kafka API)
-↓
-Databricks Bronze (Raw Ingestion)
-↓
-Databricks Silver (Parse + Validate + Deduplicate)
-↓
-Databricks Gold (CDC Merge: Insert / Update / Delete)
-↓
-Delta Lake (ADLS Gen2 / Volumes)
-
-
-📷 Detailed architecture diagram available in `/architecture`
+- Enable **rapid onboarding** of new data entities via configuration
+- Ensure **idempotent, replay-safe processing**
+- Support **scalable, low-latency streaming pipelines**
+- Implement **production-grade data engineering patterns**
 
 ---
 
-## ⚙️ Tech Stack
+## 🏗️ System Architecture
 
-- **Streaming**: Azure Event Hubs (Kafka API)
-- **Processing**: PySpark, Spark Structured Streaming
-- **Compute**: Azure Databricks
-- **Storage**: ADLS Gen2 / Databricks Volumes
-- **Table Format**: Delta Lake
-- **Language**: Python
 
----
++-------------------+
+| CDC Producers |
+| (Python Scripts) |
++---------+---------+
+|
+v
++---------------------------+
+| Azure Event Hubs (Kafka) |
+| Partitioned Event Stream |
++------------+--------------+
+|
+v
++---------------------------+
+| Databricks Bronze Layer |
+| Raw Append-Only Storage |
++------------+--------------+
+|
+v
++---------------------------+
+| Databricks Silver Layer |
+| Parse • Validate • Dedup |
++------------+--------------+
+|
+v
++---------------------------+
+| Databricks Gold Layer |
+| CDC Merge (I/U/D) |
++------------+--------------+
+|
+v
++---------------------------+
+| Delta Lake (ADLS Gen2) |
+| ACID • Scalable Storage |
++---------------------------+
 
-## 🔁 Pipeline Flow
-
-### 🟤 Bronze Layer
-- Raw ingestion from Event Hubs
-- Minimal schema enforcement
-- Stored as Delta tables (append-only)
-
-### ⚪ Silver Layer
-- JSON parsing and schema validation
-- Deduplication using event keys
-- Data quality checks applied
-
-### 🟡 Gold Layer
-- CDC merge logic (`INSERT`, `UPDATE`, `DELETE`)
-- Upserts handled using Delta Lake `MERGE`
-
----
-
-## 🧠 Key Engineering Decisions
-
-### ⚙️ Config-Driven Architecture
-- Each entity defined via JSON config
-- Enables **zero-code onboarding**
-- Scales across multiple entities
-
-### 🔁 Idempotent Processing
-- Deduplication using `event_id` + business keys
-- Prevents duplicate writes during retries
-
-### 🔄 Replay Capability
-- Bronze layer acts as **source of truth**
-- Checkpoint-based recovery via Spark
-
-### 🧩 CDC Handling Strategy
-- Operation types: `I`, `U`, `D`
-- Gold layer applies Delta `MERGE INTO`
 
 ---
 
-## 📈 Scalability
+## ⚙️ Technology Stack
 
-Designed for high-throughput streaming workloads:
+| Layer        | Technology |
+|-------------|-----------|
+| Streaming   | Azure Event Hubs (Kafka API) |
+| Compute     | Azure Databricks |
+| Processing  | PySpark, Spark Structured Streaming |
+| Storage     | ADLS Gen2 / Databricks Volumes |
+| Table Format| Delta Lake |
+| Language    | Python |
 
-- Event Hubs partitions enable parallel ingestion
-- Spark micro-batch processing enables horizontal scaling
-- Delta Lake optimized for large-scale data processing
+---
 
-**Target Capability:**
+## 🔁 Data Pipeline Design
+
+### 🟤 Bronze (Raw Ingestion)
+- Ingests events directly from Event Hubs
+- Append-only storage for immutability
+- Minimal transformation
+- Serves as **source of truth for replay**
+
+### ⚪ Silver (Refined Layer)
+- JSON parsing and schema enforcement
+- Deduplication using event identifiers
+- Data quality validation checks
+- Handles malformed/invalid records
+
+### 🟡 Gold (Serving Layer)
+- Implements CDC merge logic:
+  - `INSERT`
+  - `UPDATE`
+  - `DELETE`
+- Uses Delta Lake `MERGE INTO` for upserts
+- Produces **analytics-ready tables**
+
+---
+
+## 🧠 Core Design Principles
+
+### 1. Config-Driven Onboarding
+- Each entity defined via JSON configuration
+- Schema, keys, and CDC logic externalized
+- Enables **zero-code pipeline creation**
+
+### 2. Idempotency
+- Deduplication using event IDs + business keys
+- Guarantees correctness under retries
+
+### 3. Replayability
+- Bronze layer stores raw immutable data
+- Checkpointing allows recovery from failures
+- Supports full pipeline reprocessing
+
+### 4. Exactly-Once Semantics
+- Spark Structured Streaming + checkpointing
+- Delta Lake ACID guarantees prevent partial writes
+
+---
+
+## 📈 Scalability & Performance
+
+- Event Hubs partitions → parallel ingestion
+- Spark micro-batching → distributed compute
+- Horizontal scaling via Databricks clusters
+
+### Target Throughput
 - Millions of events/day
-- Low-latency ingestion
-- Distributed processing via Spark clusters
+- Low-latency ingestion (< seconds to minutes)
+- Scalable across multiple entities
 
 ---
 
 ## 🛡️ Reliability & Fault Tolerance
 
-- Checkpointing ensures **exactly-once processing (Spark-level)**
-- Delta Lake provides **ACID guarantees**
-- Automatic recovery from failures
+- Checkpoint-based recovery
+- Automatic retry on failure
 - Bronze layer enables full replay
+- ACID transactions via Delta Lake
 
 ---
 
-## 🔄 Schema Handling
+## 🔄 Schema Evolution Strategy
 
 - Schema enforced at Silver layer
-- Supports controlled schema evolution via configs
-- Invalid records can be isolated during validation
+- Controlled evolution via config updates
+- Backward-compatible changes supported
+- Invalid records isolated during validation
 
 ---
 
@@ -117,82 +155,100 @@ Designed for high-throughput streaming workloads:
 - `customer`
 - `orders`
 
-Each entity supports full CDC lifecycle independently.
+Each entity:
+- Independently configured
+- Supports full CDC lifecycle
 
 ---
 
 ## ⚡ Features
 
-- Config-driven onboarding
-- Real-time streaming ingestion
-- Schema validation and parsing
-- Deduplication and idempotency
-- CDC merge handling (insert/update/delete)
-- Multi-entity orchestration
-- Replay-safe architecture
+- ✅ Config-driven onboarding
+- ✅ Real-time streaming ingestion
+- ✅ Schema validation & parsing
+- ✅ Deduplication & idempotency
+- ✅ CDC merge (Insert/Update/Delete)
+- ✅ Multi-entity orchestration
+- ✅ Replay-safe architecture
 
 ---
 
 ## 🧩 Project Structure
 
 
-notebooks/ → Databricks pipeline notebooks (Bronze, Silver, Gold)
-configs/ → Entity-specific JSON configs
-producer/ → CDC event producer scripts
-architecture/ → Architecture diagrams + proof screenshots
+├── notebooks/ # Databricks pipeline notebooks
+│ ├── Bronze
+│ ├── Silver
+│ └── Gold
+├── configs/ # Entity JSON configurations
+├── producer/ # CDC event generators
+├── architecture/ # Diagrams + execution proof
+└── README.md
 
 
 ---
 
-## 🧾 Azure & Databricks Proof
+## 🧾 Proof of Execution
 
-✔ Azure Event Hubs namespace and Kafka endpoint configured  
-✔ Databricks workspace with streaming pipelines  
-✔ Successful execution of Bronze, Silver, and Gold layers  
-✔ CDC merge validation (insert/update/delete)  
+- ✔ Azure Event Hubs namespace configured
+- ✔ Kafka endpoint integration validated
+- ✔ Databricks pipelines executed end-to-end
+- ✔ Bronze → Silver → Gold flow validated
+- ✔ CDC merge tested (Insert/Update/Delete)
 
-📷 Screenshots available in `/architecture`
+📷 Refer `/architecture` for screenshots
 
 ---
 
 ## 🧠 How to Onboard a New Entity
 
-1. Add new JSON config in `/configs`
-2. Define schema, primary keys, and CDC fields
-3. Trigger orchestration notebook
-4. Pipeline processes entity end-to-end
+```bash
+# Step 1: Add config
+/configs/new_entity.json
 
-👉 **No code change required**
+# Step 2: Define schema + keys + CDC fields
+
+# Step 3: Trigger pipeline
+Run orchestration notebook
+
+# Step 4: Pipeline executes end-to-end
+``` id="onboard-code"
+
+👉 No code changes required
 
 ---
 
-## ⚠️ Limitations & Future Improvements
+## ⚠️ Known Gaps (Intentional for MVP)
 
-- No Dead Letter Queue (DLQ) implemented
-- Schema evolution partially manual
-- Monitoring/alerting not integrated
-- Cost optimization not tuned
+- No DLQ (Dead Letter Queue)
+- Limited observability (no monitoring stack)
+- No schema registry integration
+- Basic cost optimization
 
-**Planned Enhancements:**
+---
+
+## 🔮 Future Enhancements
+
 - Add DLQ for failed events
-- Integrate Azure Monitor / logging
-- Introduce schema registry
-- Optimize cluster auto-scaling
+- Integrate monitoring (Azure Monitor / Prometheus)
+- Schema Registry (Avro/JSON schema management)
+- Auto-scaling optimization
+- Data lineage tracking
 
 ---
 
-## ✅ Result
+## ✅ Outcome
 
-Successfully built and validated an **end-to-end real-time CDC streaming platform** on Azure with:
+Built a **production-aligned streaming data platform** demonstrating:
 
 - Replay-safe pipelines  
 - Idempotent processing  
-- Multi-entity support  
-- Production-aligned architecture patterns  
+- Multi-entity scalability  
+- Lakehouse architecture best practices  
 
 ---
 
 ## 👤 Author
 
-Srikar Reddy Maddi  
-Senior Data Engineer | Streaming Systems | Lakehouse Architectures
+**Srikar Reddy Maddi**  
+Senior Data Engineer | Streaming Systems | Lakehouse Architectures  
